@@ -12,6 +12,8 @@
 #include <arpa/inet.h>
 
 #include <pwd.h>
+#include <shadow.h>
+#include <crypt.h>
 
 
 #define ERR_EXIT(m) \

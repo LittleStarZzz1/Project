@@ -74,7 +74,7 @@ void handler_child(session_t* sess)
             //该命令存在命令映射表当中
             if (strcmp(sess->cmd, ctrl_cmds[i].cmd) == 0)
             {
-                if (ctrl_cmds[i].cmd_handler != NULL)//回到函数不为空
+                if (ctrl_cmds[i].cmd_handler != NULL)//回调函数不为空
                 {
                     ctrl_cmds[i].cmd_handler(sess);
                 }
@@ -85,7 +85,6 @@ void handler_child(session_t* sess)
                 break;
             }
         }
-
         if (i >= table_size)
         {
             //该命令不存在命令映射表当中
@@ -93,7 +92,6 @@ void handler_child(session_t* sess)
         }
     }
 }
-
 
 //对应命令的回调函数
 static void do_user(session_t* sess)
@@ -109,12 +107,37 @@ static void do_user(session_t* sess)
 
 static void do_pass(session_t* sess)
 {
+    //鉴权
+    struct passwd* pwd = getpwuid(sess->uid);
+    if (pwd == NULL)
+    {
+        ftp_reply(sess, FTP_LOGINERR, "Login incorrect.");
+        return;
+    }
+    struct spwd* spd = getspnam(pwd->pw_name);
+    if (spd == NULL)
+    {
+        ftp_reply(sess, FTP_LOGINERR, "Login incorrect.");
+        return;
+    }
 
+    char* encry_pwd = crypt(sess->arg, spd->sp_pwdp);
+    if (strcmp(encry_pwd, spd->sp_pwdp) != 0)
+    {
+        ftp_reply(sess, FTP_LOGINERR, "Login incorrect.");
+        return;
+    }
+
+    setegid(pwd->pw_gid);
+    seteuid(pwd->pw_uid);
+    chdir(pwd->pw_dir);
+
+    ftp_reply(sess, FTP_LOGINOK, "Login successful.");
 }
 
 static void do_syst(session_t* sess)
 {
-
+    ftp_reply(sess, FTP_SYSTOK, "UNIX Type: L8");
 }
 
 
