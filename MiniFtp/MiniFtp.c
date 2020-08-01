@@ -5,12 +5,19 @@
 
 int main(int argc, char* argv)
 {
-   session_t sess = 
-   {
+    //权限提升, 以root用户打开Miniftp
+    if (getuid() != 0)
+    {
+        printf("MiniFtp must be started as root.\n");
+        exit(EXIT_FAILURE);
+    }
+    session_t sess = 
+    {
        //控制连接
        -1, -1, "", "", ""
-   };
-
+    };
+    
+    //创建监听套接字
     int listen_fd = tcp_server("192.168.188.131", 9000);
     
     int sock_Conn;
@@ -34,7 +41,7 @@ int main(int argc, char* argv)
         {
             close(listen_fd);
 
-            //会话
+            //设置会话
             sess.ctrl_fd = sock_Conn;
             session_begin(&sess);
 
@@ -45,6 +52,7 @@ int main(int argc, char* argv)
             close(sock_Conn);
         }
     }
+    //关闭套接字
     close(listen_fd);
 
     return 0;
