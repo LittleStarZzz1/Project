@@ -22,6 +22,7 @@ static void do_feat(session_t* sess);
 static void do_pwd(session_t* sess);
 static void do_type(session_t* sess);
 static void do_port(session_t* sess);
+static void do_pasv(session_t* sess);
 static void do_list(session_t* sess);
 
 //命令映射表
@@ -34,6 +35,7 @@ static ftpcmd_t ctrl_cmds[] =
     {"PWD", do_pwd},
     {"TYPE", do_type},
     {"PORT", do_port},
+    {"PASV", do_pasv},
     {"LIST", do_list}
 };
 
@@ -353,7 +355,7 @@ static void list_common(session_t* sess)
 static void do_list(session_t* sess)
 {
     //1. 建立数据连接
-    if (get_transfer_fd(sess) == 0)
+    if (get_transfer_fd(sess) == 0)//担当被动和主动的连接建立
         return;//建立数据连接失败
 
     //2. 回复150
