@@ -38,6 +38,81 @@ int tcp_server(const char* ip, uint16_t port)
     return listen_fd;
 }
 
+int tcp_client()
+{
+    int fd;
+    if ((fd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP)) < 0)
+        ERR_EXIT("socker error~~\n");
+    return fd;
+}
+
+const char* statbuf_get_purview(struct stat* sbuf)
+{
+    // - --- --- ---
+    static char purview[] = "----------";
+    mode_t mode = sbuf->st_mode;
+
+    switch(mode & S_IFMT)
+    {
+        case S_IFSOCK:
+            purview[0] = 's';
+            break;
+        case S_IFLNK:
+            purview[0] = 'l';//链接文件
+            break;
+        case S_IFREG:
+            purview[0] = '-';//普通文件
+            break;
+        case S_IFBLK:
+            purview[0] = 'b';
+            break;
+        case S_IFDIR:
+            purview[0] = 'd';//目录文件
+            break;
+        case S_IFCHR:
+            purview[0] = 'c';//字符文件
+            break;
+        case S_IFIFO:
+            purview[0] = 'p';//管道文件
+            break;
+    }
+    if (mode & S_IRUSR)
+        purview[1] = 'r';
+    if (mode & S_IWUSR)
+        purview[2] = 'w';
+    if (mode & S_IXUSR)
+        purview[3] = 'x';
+
+    if (mode & S_IRGRP)
+        purview[4] = 'r';
+    if (mode & S_IWGRP)
+        purview[5] = 'w';
+    if (mode & S_IXGRP)
+        purview[6] = 'x';
+
+    if (mode & S_IROTH)
+        purview[7] = 'r';
+    if (mode & S_IWOTH)
+        purview[8] = 'w';
+    if (mode & S_IXOTH)
+        purview[9] = 'x';
+
+    return purview;
+}
+
+const char* statbuf_get_date(struct stat* sbuf)
+{
+    static char datebuf[64] = {0};
+    time_t time_file = sbuf->st_mtime;//获取文件最后一次修改时间
+    struct tm* ptm = localtime(&time_file);//将时间格式化,或者说格式化一个时间字符串
+
+    //%b月份的简写 %e十进制表示每月的第几天
+    // %H 24小时制的小时  %M 十进制表示的分钟数
+    strftime(datebuf, 64, "%b %e %H:%M", ptm);
+    return datebuf;
+}
+
+
 
 
 
