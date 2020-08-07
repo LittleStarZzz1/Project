@@ -10,4 +10,8 @@ const char* statbuf_get_purview(struct stat* sbuf);
 
 const char* statbuf_get_date(struct stat* sbuf);
 
+void send_fd(int sock_fd, int fd);
+int recv_fd(const int sock_fd);
+
+
 #endif //_SYSUTIL_H

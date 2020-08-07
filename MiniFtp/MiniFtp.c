@@ -20,7 +20,10 @@ int main(int argc, char* argv)
         NULL, -1, -1,
 
         // ftp协议状态
-        0
+        0,
+
+        //父子进程通道
+        -1, -1
     };
     
     //创建监听套接字

@@ -20,6 +20,10 @@ typedef struct session
 
     // ftp 协议状态(ascii or binary)
     int is_ascii;
+
+    // 父子进程通道
+    int parent_fd;
+    int child_fd;
 }session_t;
 
 void session_begin(session_t* sess);
