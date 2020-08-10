@@ -20,7 +20,7 @@ int main(int argc, char* argv)
         NULL, -1, -1,
 
         // ftp协议状态
-        0,
+        0, NULL,
 
         //父子进程通道
         -1, -1

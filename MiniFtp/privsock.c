@@ -59,7 +59,7 @@ char priv_sock_get_cmd(int fd)//获取命令(父<-子)
         exit(EXIT_FAILURE);
     }
     if (ret != sizeof(cmd))
-        ERR_EXIT("priv_sock_get_cmd error~~\n");
+        ERR_EXIT("1 = priv_sock_get_cmd error~~\n");
     return cmd;
 }
 void priv_sock_send_result(int fd, char res)//发送结果(父->子)
@@ -113,7 +113,7 @@ void priv_sock_recv_buf(int fd, char *buf, unsigned int len)//接收字符串
     if (buf_len > len)
         ERR_EXIT("priv_sock_rev_buf error~~\n");
 
-    int ret = recv(fd, buf, len, 0);
+    int ret = recv(fd, buf, buf_len, 0);
     if (ret != (int)buf_len)
         ERR_EXIT("priv_sock_rev_buf error~~\n");
 }

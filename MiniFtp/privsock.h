@@ -5,7 +5,7 @@
 #include "session.h"
 
 //FTP服务进程向nobody进程请求的命令
-#define PRIV_SOCK_GET_DATA_SOCK 1 // 获取数据连接套接字
+#define PRIV_SOCK_GET_DATA_SOCK 1 // 获取主动模式下数据连接套接字
 #define PRIV_SOCK_PASV_ACTIVE   2 // 被动连接是否被激活
 #define PRIV_SOCK_PASV_LISTEN   3 // 获取被动连接的监听套接字
 #define PRIV_SOCK_PASV_ACCEPT   4 // 获取被动连接模式下接收连接的套接字

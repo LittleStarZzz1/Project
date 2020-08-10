@@ -2,6 +2,7 @@
 #include "ftp_codes.h"
 #include "str.h"
 #include "sysutil.h"
+#include "privsock.h"
 
 //ftp服务进程
 
@@ -24,6 +25,16 @@ static void do_type(session_t* sess);
 static void do_port(session_t* sess);
 static void do_pasv(session_t* sess);
 static void do_list(session_t* sess);
+static void do_cwd(session_t* sess);
+static void do_mkd(session_t* sess);
+static void do_rmd(session_t* sess);
+static void do_rnfr(session_t* sess);
+static void do_rnto(session_t* sess);
+static void do_dele(session_t* sess);
+static void do_size(session_t* sess);
+static void do_stor(session_t* sess);
+static void do_retr(session_t* sess);
+
 
 //命令映射表
 static ftpcmd_t ctrl_cmds[] =
@@ -32,11 +43,20 @@ static ftpcmd_t ctrl_cmds[] =
     {"PASS", do_pass},
     {"SYST", do_syst},
     {"FEAT", do_feat},
-    {"PWD", do_pwd},
+    {"PWD",  do_pwd},
     {"TYPE", do_type},
     {"PORT", do_port},
     {"PASV", do_pasv},
-    {"LIST", do_list}
+    {"LIST", do_list},
+    {"CWD",  do_cwd},
+    {"MKD",  do_mkd},
+    {"RMD",  do_rmd},
+    {"RNFR", do_rnfr},
+    {"RNTO", do_rnto},
+    {"DELE", do_dele},
+    {"SIZE", do_size},
+    {"STOR", do_stor},
+    {"RETR", do_retr}
 };
 
 //////////////////////////////////////////////////////////////////////
@@ -229,15 +249,16 @@ static void do_pasv(session_t* sess)
 {
     // 227 Entering Passive Mode (192,168,188,131,135,82)
     char ip[16] = "192.168.188.131";//服务器IP
+    priv_sock_send_cmd(sess->child_fd, PRIV_SOCK_PASV_LISTEN);
 
-    sess->pasv_listen_fd = tcp_server(ip, 0);//端口号为0表示生成临时端口
+    /*sess->pasv_listen_fd = tcp_server(ip, 0);//端口号为0表示生成临时端口
 
     struct sockaddr_in address;
     socklen_t socklen = sizeof(struct sockaddr);
     if (getsockname(sess->pasv_listen_fd, (struct sockaddr*)&address, &socklen) < 0)
         ERR_EXIT("setsockname error~~~\n");
-
-    uint16_t port = ntohs(address.sin_port);
+    */
+    uint16_t port = (uint16_t)priv_sock_get_int(sess->child_fd);
 
     int v[4] = {0};
     sscanf(ip, "%u.%u.%u.%u", &v[0], &v[1], &v[2], &v[3]);
@@ -246,53 +267,113 @@ static void do_pasv(session_t* sess)
             v[0], v[1], v[2], v[3], port >> 8, port & 0xff);
 
     ftp_reply(sess, FTP_PASVOK, msg);
-
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+int pasv_active(session_t* sess);
 
+//主动模式是否被激活
 int port_active(session_t* sess)
 {
+    //sess->port_addr != NULL表示主动模式被激活
     if (sess->port_addr)
-        return 1;//保存了客户端的IP和端口,表明是主动模式,主动模式被激活
+    {
+        //被动模式也被激活
+        if (pasv_active(sess))
+        {
+            //表示出错
+            fprintf(stderr, "both port and pasv are active~~\n");
+            exit(EXIT_FAILURE);
+        }
+        return 1;//走到这里表示只有主动模式被激活
+    }
     return 0;
 }
 
+//被动模式是否被激活
 int pasv_active(session_t* sess)
 {
-    if (sess->pasv_listen_fd != -1)
+    priv_sock_send_cmd(sess->child_fd, PRIV_SOCK_PASV_ACTIVE);
+    //sess->pasv_listen_fd != -1表示被动模式被激活
+    if (priv_sock_get_int(sess->child_fd))
+    {
+        //主动模式也被激活
+        if (port_active(sess))
+        {
+            //出错了
+            fprintf(stderr, "both pasv and port are active~~\n");
+            exit(EXIT_FAILURE);
+        }
         return 1;
+    }
     return 0;
+}
+
+int get_port_fd(session_t* sess)
+{
+    int ret = 1;
+    //ftp服务进程(即子进程)向nobody进程(即父进程)发起通信
+    priv_sock_send_cmd(sess->child_fd, PRIV_SOCK_GET_DATA_SOCK);
+    uint16_t port = ntohs(sess->port_addr->sin_port);
+    char* ip = inet_ntoa(sess->port_addr->sin_addr);
+
+    priv_sock_send_int(sess->child_fd, (int)port);
+    priv_sock_send_buf(sess->child_fd, ip, strlen(ip));
+
+    char res = priv_sock_get_result(sess->child_fd);
+    if (res == PRIV_SOCK_RESULT_BAD)
+        ret = 0;
+    else if (res == PRIV_SOCK_RESULT_OK)
+        sess->data_fd = priv_sock_recv_fd(sess->child_fd);
+    return ret;
+}
+
+int get_pasv_fd(session_t* sess)
+{
+    int ret = 1;
+    priv_sock_send_cmd(sess->child_fd, PRIV_SOCK_PASV_ACCEPT);
+    char res = priv_sock_get_result(sess->child_fd);
+    if(res == PRIV_SOCK_RESULT_BAD)
+        ret = 0;
+    else if(res == PRIV_SOCK_RESULT_OK)
+        sess->data_fd = priv_sock_recv_fd(sess->child_fd);
+
+    return ret;
 }
 
 int get_transfer_fd(session_t* sess)
 {
-   if (!port_active(sess) && !pasv_active(sess))
-   {
-       ftp_reply(sess, FTP_BADSENDCONN,"Use PORT or PASV first.");
-       return 0;
-   }
+    //主动模式和被动模式都没有被激活 
+    if (!port_active(sess) && !pasv_active(sess))
+    {
+        ftp_reply(sess, FTP_BADSENDCONN,"Use PORT or PASV first.");
+        return 0;
+    }
 
-   int ret = 1;
-   //port
-   if (port_active(sess))
-   {
-       int fd = tcp_client();
+    int ret = 1;
+    //port,主动模式被激活
+    if (port_active(sess))
+    {
 
-       if (connect(fd, (struct sockaddr*)sess->port_addr, sizeof(struct sockaddr)) < 0)
-       {
-           ret = 0;
-       }
-       else
-       {
-           sess->data_fd = fd;
-       }
-   }
+        if (!get_port_fd(sess))
+            ret = 0;
 
-   //pasv
-   if (pasv_active(sess))
-   {
-        int fd = accept(sess->pasv_listen_fd, NULL, NULL);
+        /*int fd = tcp_client();
+
+        if (connect(fd, (struct sockaddr*)sess->port_addr,sizeof(struct sockaddr)) < 0)
+        {
+            ret = 0;
+        }
+        else
+        {
+            sess->data_fd = fd;
+        }*/ 
+    }
+
+    //pasv, 表示被动模式被激活
+    if (pasv_active(sess))
+    {
+        /*int fd = accept(sess->pasv_listen_fd, NULL, NULL);
         if (fd < 0)
             ret = 0;
         else
@@ -300,16 +381,18 @@ int get_transfer_fd(session_t* sess)
             close(sess->pasv_listen_fd);
             sess->pasv_listen_fd = -1;
             sess->data_fd = fd;
-        }
-   }
+        }*/
+        if (!get_pasv_fd(sess))
+            ret = 0;
+    }
 
-   if (sess->port_addr)
-   {
-       free(sess->port_addr);
-       sess->port_addr = NULL;
-   }
+    if (sess->port_addr)
+    {
+        free(sess->port_addr);
+        sess->port_addr = NULL;
+    }
 
-   return ret;
+    return ret;
 }
 
 static void list_common(session_t* sess)
@@ -372,13 +455,206 @@ static void do_list(session_t* sess)
     ftp_reply(sess, FTP_TRANSFEROK, "Directory send OK.");
 }
 
+static void do_cwd(session_t* sess)
+{
+    if (chdir(sess->arg) < 0)
+    {
+        ftp_reply(sess, FTP_NOPERM, "Failed to change directory.");
+        return;
+    }
+    ftp_reply(sess, FTP_CWDOK, "Directory successfully changed.");
+}
 
+static void do_mkd(session_t* sess)
+{
+    if (mkdir(sess->arg, 0777) < 0)
+    {
+        ftp_reply(sess, FTP_NOPERM, "Create directory operation failed.");
+        return;
+    }
 
+    char text[1024] = {0};
+    sprintf(text, "\"%s\" create", sess->arg);
+    ftp_reply(sess, FTP_MKDIROK, text);
+}
 
+static void do_rmd(session_t* sess)
+{
+    if (rmdir(sess->arg) < 0)
+    {
+        ftp_reply(sess, FTP_FILEFAIL, "Remove directory operation failed.");
+        return;
+    }
 
+    //250 Remove directory operation successful.
+    ftp_reply(sess, FTP_RMDIROK, "Remove directory operation successful.");
+}
 
+static void do_rnfr(session_t* sess)
+{
+   sess->rnfr_name = (char*)malloc(strlen(sess->arg) + 1);
+   memset(sess->rnfr_name, 0, strlen(sess->arg) + 1);
+   strcpy(sess->rnfr_name, sess->arg);
+   ftp_reply(sess, FTP_RNFROK, "Ready for RNTO.");
+}
+static void do_rnto(session_t* sess)
+{
+    if (sess->rnfr_name == NULL)
+    {
+        //503 RNFR required first.
+        ftp_reply(sess, FTP_NEEDRNFR, "RNFR required first.");
+        return;
+    }
 
+    if (rename(sess->rnfr_name, sess->arg) < 0)
+    {
+        ftp_reply(sess, FTP_NOPERM, "Rename failed.");
+        return;
+    }
 
+    free(sess->rnfr_name);
+    sess->rnfr_name = NULL;
+
+    ftp_reply(sess, FTP_RENAMEOK, "Rename successful.");
+}
+
+static void do_dele(session_t* sess)
+{
+    if (unlink(sess->arg) < 0)
+    {
+        //550 Delete operation failed.
+        ftp_reply(sess, FTP_NOPERM, "Delete operation failed.");
+        return;
+    }
+    //250 Delete operation successful.
+    ftp_reply(sess, FTP_DELEOK, "Delete operation successful.");
+}
+
+static void do_size(session_t* sess)
+{
+    struct stat sbuf;
+    if (stat(sess->arg, &sbuf) < 0)
+    {
+         ftp_reply(sess, FTP_FILEFAIL, "SIZE operation failed.");
+         return;
+    }
+    if (!S_ISREG(sbuf.st_mode))//不是普通文件
+    {
+        ftp_reply(sess, FTP_FILEFAIL, "Could not get file size.");
+        return;
+    }
+
+    char text[1024] = {0};
+    sprintf(text, "%lld", (long long)sbuf.st_size);
+    ftp_reply(sess, FTP_SIZEOK, text);
+}
+
+//上传
+static void do_stor(session_t* sess)
+{
+    //建立数据连接
+    if (get_transfer_fd(sess) == 0)
+        return;
+
+    int fd = open(sess->arg, O_CREAT | O_WRONLY, 0755);
+    if (fd == -1)
+    {
+        ftp_reply(sess, FTP_FILEFAIL, "Failed to open file.");
+        return;
+    }
+
+    ftp_reply(sess, FTP_DATACONN,"Ok to send data.");
+
+    char buf[MAX_BUFFER_SIZE] = {0};
+    int ret;
+    while (1)
+    {
+        ret = recv(sess->data_fd, buf, MAX_BUFFER_SIZE, 0);
+        if (ret == -1)
+        {
+            ftp_reply(sess, FTP_BADSENDFILE, "Failure reading from local file.");
+            break;
+        }
+
+        if (ret == 0)
+        {
+            //226 Transfer complete.
+            ftp_reply(sess, FTP_TRANSFEROK, "Transfer complete.");
+            return;
+        }
+
+        if (write(fd, buf, ret) != ret)
+        {
+            ftp_reply(sess, FTP_BADSENDFILE, "Failure writting to network stream.");
+            break;
+        }
+    }
+    close(fd);
+    close(sess->data_fd);
+    sess->data_fd = -1;
+}
+
+//下载
+static void do_retr(session_t* sess)
+{
+    //先建立数据连接
+    if (get_transfer_fd(sess) == 0)
+        return;
+
+    int fd = open(sess->arg, O_RDONLY);
+    if (fd == -1)
+    {
+        ftp_reply(sess, FTP_FILEFAIL, "Failed to open file.");;
+        return;
+    }
+
+    struct stat sbuf;
+    fstat(fd, &sbuf);
+
+    char msg[MAX_BUFFER_SIZE] = {0};
+    if (sess->is_ascii)
+        sprintf(msg, "Opening ASCII mode data connection for %s (%d bytes).", sess->arg, sbuf.st_size);
+    else
+        sprintf(msg, "Opening BINARY mode data connection for %s (%d bytes).", sess->arg, sbuf.st_size);
+
+   //150 Opening ASCII mode data connection for /home/bss/mytt/abc/test.cpp (70 bytes).
+    ftp_reply(sess, FTP_DATACONN, msg);
+
+    char buf[MAX_BUFFER_SIZE] = {0};
+    int read_total_bytes = sbuf.st_size;
+    int read_count = 0;
+    int ret;
+
+    while (1)
+    {
+        read_count = read_total_bytes>MAX_BUFFER_SIZE?MAX_BUFFER_SIZE:read_total_bytes;
+        ret = read(fd, buf, read_count);
+
+        if (ret == -1 || ret != read_count)
+        {
+            ftp_reply(sess, FTP_BADSENDFILE, "Failure reading from local file.");
+            break;
+        }
+
+        if (ret == 0)
+        {
+            // 226 Transfer complete.
+            ftp_reply(sess, FTP_TRANSFEROK, "Transfer complete.");
+            break;
+        }
+        
+        if (send(sess->data_fd, buf, ret, 0) != ret)
+        {
+            ftp_reply(sess, FTP_BADSENDFILE, "Failure writting to network stream.");
+            break;
+        }
+        read_total_bytes -= read_count;
+    }
+
+    close(fd);
+    close(sess->data_fd);
+    sess->data_fd = -1;
+}
 
 
 

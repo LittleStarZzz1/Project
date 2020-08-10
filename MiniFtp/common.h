@@ -18,6 +18,12 @@
 #include <dirent.h>
 #include <sys/stat.h>
 
+#include <linux/capability.h>
+#include <sys/syscall.h>
+
+#include <fcntl.h>
+
+
 #include <time.h>
 
 #define ERR_EXIT(m) \

@@ -38,14 +38,26 @@ int tcp_server(const char* ip, uint16_t port)
     return listen_fd;
 }
 
-int tcp_client()
+int tcp_client(int port)
 {
     int fd;
     if ((fd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP)) < 0)
         ERR_EXIT("socker error~~\n");
+    
+    //nobody进程辅助绑定端口
+    int on = 1;
+    if (setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on)) < 0)
+        ERR_EXIT("setsockopt error~~~\n");
+
+    struct sockaddr_in address;
+    address.sin_family = AF_INET;
+    address.sin_addr.s_addr = INADDR_ANY;
+    address.sin_port = htons(port);
+    if(bind(fd, (struct sockaddr*)&address, sizeof(struct sockaddr)) < 0)
+        ERR_EXIT("bind 20");
+    
     return fd;
 }
-
 const char* statbuf_get_purview(struct stat* sbuf)
 {
     // - --- --- ---
@@ -182,7 +194,6 @@ int recv_fd(const int sock_fd)
         ERR_EXIT("no passed fd");
 
     return recv_fd;
-
 }
 
 
