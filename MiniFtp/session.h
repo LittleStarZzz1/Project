@@ -21,6 +21,7 @@ typedef struct session
     // ftp 协议状态(ascii or binary)
     int is_ascii;
     char* rnfr_name;
+    long long restart_pos;//记录断点续传重新开始的位置
 
     // 父子进程通道
     int parent_fd;

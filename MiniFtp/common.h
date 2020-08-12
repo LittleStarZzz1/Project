@@ -10,6 +10,7 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#include <netdb.h>
 
 #include <pwd.h>
 #include <shadow.h>
@@ -36,5 +37,11 @@ do{\
 #define MAX_COMMAND_SIZE 1024
 #define MAX_COMMAND 32
 #define MAX_ARG 1024
+#define MAX_SETTING_LINE 1024
+#define MAX_KEY_VALUE_SIZE 128
+
+#define MAX_HOST_NAME_SIZE 128
+
+
 
 #endif //_COMMON_H

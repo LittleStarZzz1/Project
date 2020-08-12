@@ -1,6 +1,7 @@
 #include "priv_parent.h"
 #include "privsock.h"
 #include "sysutil.h"
+#include "session.h"
 
 //获取主动模式的数据连接套接字
 static void privop_pasv_get_data_sock(session_t *sess); 
@@ -14,18 +15,13 @@ static void privop_pasv_listen(session_t *sess);
 //获取被动模式下的数据连接套接字
 static void privop_pasv_accept(session_t *sess); 
 
+/*int capset(cap_user_header_t hdrp,const cap_user_data_t datap)
+{
+    return syscall(__NR_capset, hdrp, datap);
+}*/
 //提升权限
 static void minimize_privilege()
-{
-    //把root进程更名为 nobody进程                                                    
-    struct passwd* pw = getpwnam("nobody");
-    if (pw == NULL)                    
-        ERR_EXIT("getpwnam error~~\n");
-    if (setegid(pw->pw_gid) < 0)     
-        ERR_EXIT("setgid error~~\n");
-    if (seteuid(pw->pw_uid) < 0)      
-        ERR_EXIT("seteuid error~~\n");      
-
+{    
     struct __user_cap_header_struct cap_header;
     struct __user_cap_data_struct cap_data;
     memset(&cap_header, 0, sizeof(cap_header));
@@ -44,7 +40,16 @@ static void minimize_privilege()
 }
 
 void handler_parent(session_t* sess)
-{
+{    
+    //把root进程更名为 nobody进程                                                    
+    struct passwd* pw = getpwnam("nobody");
+    if (pw == NULL)                    
+        ERR_EXIT("getpwnam error~~\n");
+    if (setegid(pw->pw_gid) < 0)     
+        ERR_EXIT("setgid error~~\n");
+    if (seteuid(pw->pw_uid) < 0)      
+        ERR_EXIT("seteuid error~~\n");      
+
     minimize_privilege();
     char cmd;
     while (1)
@@ -95,7 +100,6 @@ static void privop_pasv_get_data_sock(session_t *sess)
     priv_sock_send_result(sess->parent_fd, PRIV_SOCK_RESULT_OK);
     priv_sock_send_fd(sess->parent_fd, fd);
     close(fd);//将描述符发送给ftp服务进程之后,nobody进程用不到这个描述符了,直接关闭
-
 }
 
 static void privop_pasv_active(session_t *sess)
@@ -110,7 +114,10 @@ static void privop_pasv_active(session_t *sess)
 
 static void privop_pasv_listen(session_t *sess)
 {
-    char* ip = "192.168.188.131";//暂且写死
+    //char* ip = "192.168.188.131";//暂且写死
+    char ip[16] = {0};
+    getLocalip(ip);
+
     sess->pasv_listen_fd = tcp_server(ip, 0);//传端口0表示绑定临时端口
 
     struct sockaddr_in address;

@@ -44,18 +44,20 @@ int tcp_client(int port)
     if ((fd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP)) < 0)
         ERR_EXIT("socker error~~\n");
     
-    //nobody进程辅助绑定端口
-    int on = 1;
-    if (setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on)) < 0)
-        ERR_EXIT("setsockopt error~~~\n");
+    if (port > 0)
+    {
+        //nobody进程辅助绑定端口
+        int on = 1;
+        if (setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on)) < 0)
+            ERR_EXIT("setsockopt error~~~\n");
 
-    struct sockaddr_in address;
-    address.sin_family = AF_INET;
-    address.sin_addr.s_addr = INADDR_ANY;
-    address.sin_port = htons(port);
-    if(bind(fd, (struct sockaddr*)&address, sizeof(struct sockaddr)) < 0)
-        ERR_EXIT("bind 20");
-    
+        struct sockaddr_in address;
+        address.sin_family = AF_INET;
+        address.sin_addr.s_addr = INADDR_ANY;
+        address.sin_port = htons(port);
+        if(bind(fd, (struct sockaddr*)&address, sizeof(struct sockaddr)) < 0)
+            ERR_EXIT("bind 20");
+    }
     return fd;
 }
 const char* statbuf_get_purview(struct stat* sbuf)
@@ -194,6 +196,22 @@ int recv_fd(const int sock_fd)
         ERR_EXIT("no passed fd");
 
     return recv_fd;
+}
+
+void getLocalip(char* ip)
+{
+    char host[MAX_HOST_NAME_SIZE] = {0};
+    if(gethostname(host, sizeof(host)) < 0)
+        ERR_EXIT("getLocalip error~~\n");
+    printf("host name = %s\n", host);
+    
+    struct hostent* ph;
+    if ((ph = gethostbyname(host)) == NULL)
+    {
+        ERR_EXIT("gethostbyname error~~\n");
+    }
+
+    strcpy(ip, inet_ntoa(*(struct in_addr*)ph->h_addr));
 }
 
 

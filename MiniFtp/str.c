@@ -27,3 +27,15 @@ void str_split(const char* str, char* left, char* right, char c)
         strcpy(right, pos + 1);
     }
 }
+
+void str_upper(char* str)
+{
+    while (*str != '\0')
+    {
+        if (*str <= 'z' && *str >= 'a')
+            *str -= 32;
+        str++;
+    }
+}
+
+

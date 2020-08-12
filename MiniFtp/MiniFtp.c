@@ -1,16 +1,28 @@
 #include "common.h"
 #include "sysutil.h"
 #include "session.h"
+#include "parseconf.h"
+#include "tunable.h"
 
+void parseconf_test()
+{
+    //parseconf_load_file("MiniFtp.conf");
+}
 
 int main(int argc, char* argv)
 {
+    parseconf_load_file("MiniFtp.conf");
+    char ip[16] = {0};
+    getLocalip(ip);
+    printf("ip = %s\n", ip);
+
     //权限提升, 以root用户打开Miniftp
     if (getuid() != 0)
     {
         printf("MiniFtp must be started as root.\n");
         exit(EXIT_FAILURE);
     }
+    //初始化会话信息
     session_t sess = 
     {
         //控制连接
@@ -20,15 +32,16 @@ int main(int argc, char* argv)
         NULL, -1, -1,
 
         // ftp协议状态
-        0, NULL,
+        0, NULL, 0,
 
         //父子进程通道
         -1, -1
     };
     
     //创建监听套接字
-    int listen_fd = tcp_server("192.168.188.131", 9000);
-    
+    //int listen_fd = tcp_server(tunable_listen_address, tunable_listen_port);
+    int listen_fd = tcp_server(tunable_listen_address, tunable_listen_port);
+
     int sock_Conn;
     struct sockaddr_in addr_Cli;
     socklen_t addrlen;
