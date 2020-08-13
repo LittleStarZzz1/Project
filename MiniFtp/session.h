@@ -22,10 +22,18 @@ typedef struct session
     int is_ascii;
     char* rnfr_name;
     long long restart_pos;//记录断点续传重新开始的位置
+    unsigned int num_clients;
+    unsigned int num_per_ip;
 
     // 父子进程通道
     int parent_fd;
     int child_fd;
+
+    //限速
+    unsigned long upload_max_rate;//最大上传速度
+    unsigned long download_max_rate;//最大下载速度
+    long transfer_start_sec;//秒
+    long transfer_start_usec;//微秒
 }session_t;
 
 void session_begin(session_t* sess);

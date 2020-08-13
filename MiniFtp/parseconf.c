@@ -29,9 +29,9 @@ parseconf_uint_array[] =
     {"connect_timeout", &tunable_connect_timeout},
     {"idle_session_timeout", &tunable_idle_session_timeout},
     {"data_connection_timeout", &tunable_data_connection_timeout},
-    {"loacl_umask", &tunable_loacl_umask},
+    {"loacl_umask", &tunable_local_umask},
     {"upload_max_rate", &tunable_upload_max_rate},
-    {"download_mas_rate", &tunable_download_mas_rate},
+    {"download_mas_rate", &tunable_download_max_rate},
     {NULL, NULL}
 };
 
@@ -125,8 +125,4 @@ void parseconf_load_setting(const char *setting)
         }                                                                             
         p_uint_setting++;                                                              
     } 
-
-
-
-
 }

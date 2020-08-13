@@ -15,6 +15,12 @@ int recv_fd(const int sock_fd);
 
 void getLocalip(char* ip);
 
+//获取当前系统的秒数
+long get_time_sec();
+//获取当前系统的微秒数
+long get_time_usec();
+
+void nono_sleep(double sleep_time);
 
 
 #endif //_SYSUTIL_H

@@ -215,6 +215,34 @@ void getLocalip(char* ip)
 }
 
 
+static struct timeval s_cur_time;
+long get_time_sec()
+{
+    if(gettimeofday(&s_cur_time, NULL) < 0)
+        ERR_EXIT("get_time_sec error~~\n");
+
+    return s_cur_time.tv_sec;
+}
+long get_time_usec()
+{
+    return s_cur_time.tv_usec;
+}
+
+void nano_sleep(double sleep_time)
+{
+    time_t sec = (time_t)sleep_time;
+    double decimal = sleep_time - (double)sec;
+
+    struct timespec ts;
+    ts.tv_sec = sec;
+    ts.tv_nsec = (long)decimal * 1000000000;//纳秒
+
+    int ret;
+    do
+    {
+        ret = nanosleep(&ts, &ts);
+    }while (ret == -1 && errno == EINTR); //循环用于预防休眠被信号中断
+}
 
 
 

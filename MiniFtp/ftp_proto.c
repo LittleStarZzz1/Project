@@ -553,6 +553,54 @@ static void do_size(session_t* sess)
     ftp_reply(sess, FTP_SIZEOK, text);
 }
 
+//限速
+static void limit_rate(session_t* sess, int bytes_transfered, int isupload)
+{
+    long cur_sec = get_time_sec();
+    long cur_usec = get_time_usec();
+
+    double pass_time = (double)(cur_sec - sess->transfer_start_sec);
+    pass_time += (double)((cur_usec - sess->transfer_start_usec) 
+            / (double)1000000);//1 s = 10^6 usec
+
+    //计算当前的传输速度, 当前传输的字节数 / 当前流逝过的时间
+    unsigned int cur_rate = (unsigned int)((double)bytes_transfered / pass_time);
+
+    double rate_ratio;
+    if (isupload)
+    {
+        if(cur_rate <= sess->upload_max_rate)
+        {
+            //当前传输速度小于等于最大传输速度
+            //不需要限速, 重新记录起始时间
+            sess->transfer_start_sec = cur_sec;
+            sess->transfer_start_usec = cur_usec;
+            return;
+        }
+
+        rate_ratio = cur_rate / sess->upload_max_rate;
+    }
+    else
+    {
+        if(cur_rate <= sess->download_max_rate)
+        {
+            sess->transfer_start_sec = cur_sec;
+            sess->transfer_start_usec = cur_usec;
+            return;
+        }
+
+        rate_ratio = cur_rate / sess->download_max_rate;
+    }
+    
+    //需要睡眠的时间
+    double sleep_time = (rate_ratio - 1) * pass_time;
+    nano_sleep(sleep_time);
+
+    //重新记录起始传送时间
+    sess->transfer_start_sec = get_time_sec();
+    sess->transfer_start_usec = get_time_usec();
+}
+
 //上传
 static void do_stor(session_t* sess)
 {
@@ -580,6 +628,11 @@ static void do_stor(session_t* sess)
 
     char buf[MAX_BUFFER_SIZE] = {0};
     int ret;
+
+    //登记时间
+    sess->transfer_start_sec = get_time_sec(); 
+    sess->transfer_start_usec = get_time_usec();
+
     while (1)
     {
         ret = recv(sess->data_fd, buf, MAX_BUFFER_SIZE, 0);
@@ -596,6 +649,9 @@ static void do_stor(session_t* sess)
             return;
         }
 
+        //限速
+        if(sess->upload_max_rate != 0)
+            limit_rate(sess, ret, 1);
         if (write(fd, buf, ret) != ret)
         {
             ftp_reply(sess, FTP_BADSENDFILE, "Failure writting to network stream.");
@@ -656,6 +712,10 @@ static void do_retr(session_t* sess)
         int read_count = 0;
         int ret;
 
+        //开始下载之前登记开始的时间
+        sess->transfer_start_sec = get_time_sec();
+        sess->transfer_start_usec = get_time_usec();
+
         while (1)
         {
             read_count = read_total_bytes>MAX_BUFFER_SIZE?MAX_BUFFER_SIZE:read_total_bytes;
@@ -673,7 +733,10 @@ static void do_retr(session_t* sess)
                 ftp_reply(sess, FTP_TRANSFEROK, "Transfer complete.");
                 break;
             }
-
+            
+            //限速
+            if (sess->download_max_rate != 0)
+                limit_rate(sess, read_count, 0);
             if (send(sess->data_fd, buf, ret, 0) != ret)
             {
                 ftp_reply(sess,FTP_BADSENDFILE,"Failure writting to network stream.");
