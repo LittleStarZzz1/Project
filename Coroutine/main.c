@@ -41,8 +41,6 @@ int main()
         coroutine_resume(s, id_2);
     }
 
-    
-
     schedule_delete(s);
     free(a);
     free(b);

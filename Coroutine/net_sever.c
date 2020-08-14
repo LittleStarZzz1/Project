@@ -53,6 +53,7 @@ void accept_connect(int listen_fd, schedule_t* s, int co_ids[], void* (*call_bac
     while (1)
     {
         int accept_fd = accept(listen_fd, NULL, NULL);
+        //有新连接到来, 为新连接创建一个协程, 进行交互
         if (accept_fd > 0)
         {
             set_unblock(accept_fd);//设置非阻塞
@@ -74,6 +75,8 @@ void accept_connect(int listen_fd, schedule_t* s, int co_ids[], void* (*call_bac
             }
             coroutine_running(s, id);
         }
+        //没有新连接到来, 去检查数组中是否有未完成调度的协程处于SUSPEND状态
+        //有的话将其cpu恢复去执行
         else
         {
             int i = 0;
@@ -81,7 +84,7 @@ void accept_connect(int listen_fd, schedule_t* s, int co_ids[], void* (*call_bac
             {
                 if (co_ids[i] == -1)
                     continue;
-                coroutine_resume(s, co_ids[i]);
+                coroutine_resume(s, i);
             }
         }
     }
@@ -96,7 +99,7 @@ void* _handler(schedule_t* s, void* args)
 
     while (1)
     {
-        memset(buf, 0x00, sizeof(buf));
+        memset(buf, 0, sizeof(buf));
 
         int ret = read(accept_fd, buf, 1023);
 

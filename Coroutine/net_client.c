@@ -30,12 +30,13 @@ int main()
     while (fgets(buf, 1024, stdin) != NULL)
     {
         write(fd, buf, strlen(buf));
-        memset(buf, 0x00, sizeof(buf));
+        memset(buf, 0, sizeof(buf));
 
         int ret = read(fd, buf, 1024);
         if (ret <= 0)
             break;
-        printf("=> %s\n", buf);
+        else
+            printf("=> %s\n", buf);
     }
 
     return 0;
