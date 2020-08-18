@@ -5,6 +5,7 @@
 #include "tunable.h"
 #include "ftp_codes.h"
 #include "ftp_proto.h"
+#include "hash.h"
 
 void ParseConf_Test()
 {
@@ -25,7 +26,24 @@ void ParseConf_Test()
     printf("tunable_listen_address = %s\n", tunable_listen_address);
 }
 
+
+//最大连接数限制
 static unsigned int s_children;
+
+//ip-每ip对应连接数映射关系哈希表
+static hash_t *s_ip_count_hash;
+//计算每ip对应的连接数
+unsigned int handle_ip_count(void *ip);
+
+//子进程退出之后的信号处理回调函数
+void handle_sigchld(int sig);
+
+//每ip连接数限制
+static hash_t *s_pid_ip_hash;//pid-ip映射关系哈希表
+//将ip对应的连接数减1
+void drop_ip_count(void *ip);
+
+
 static void check_limit(session_t* sess);
 
 int main(int argc, char* argv)
@@ -71,6 +89,8 @@ int main(int argc, char* argv)
     //创建监听套接字
     //int listen_fd = tcp_server(tunable_listen_address, tunable_listen_port);
     int listen_fd = tcp_server(tunable_listen_address, tunable_listen_port);
+
+    signal(SIGCHLD, handle_sigchld);
 
     int sock_Conn;
     struct sockaddr_in addr_Cli;
@@ -130,6 +150,34 @@ static void check_limit(session_t* sess)
         // 421 There are too many connections from your internet address
     }
 }
+
+void handle_sigchld(int sig)
+{
+    pid_t pid;
+    while ((waitpid(-1, NULL, WNOHANG)) > 0)
+    {
+        --s_children;
+        unsigned int *ip = hash_lookup_entry(s_pid_ip_hash, &pid, sizeof(pid));
+
+        if (ip == NULL)
+        {
+            continue;
+        }
+        drop_ip_count(ip);
+        hash_free_entry(s_pid_ip_hash, &pid, sizeof(pid));
+    }
+}
+
+//哈希函数
+unsigned int hash_func(unsigned int buckets, void *key)
+{
+    return (*(unsigned int*)key % buckets);
+}
+
+
+
+
+
 
 
 

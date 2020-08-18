@@ -7,6 +7,7 @@
 #include <string.h>
 #include <assert.h>
 #include <errno.h>
+#include <signal.h>
 
 #include <sys/socket.h>
 #include <netinet/in.h>
