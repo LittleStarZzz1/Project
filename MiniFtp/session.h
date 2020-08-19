@@ -17,6 +17,7 @@ typedef struct session
     struct sockaddr_in* port_addr;
     int data_fd;
     int pasv_listen_fd;
+    int data_process;
 
     // ftp 协议状态(ascii or binary)
     int is_ascii;

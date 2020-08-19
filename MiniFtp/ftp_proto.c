@@ -3,6 +3,9 @@
 #include "str.h"
 #include "sysutil.h"
 #include "privsock.h"
+#include "tunable.h"
+
+session_t* p_sess;
 
 //ftp服务进程
 
@@ -62,6 +65,53 @@ static ftpcmd_t ctrl_cmds[] =
 
 //////////////////////////////////////////////////////////////////////
 
+void handle_ctrl_timeout(int sig)
+{
+    shutdown(p_sess->ctrl_fd, SHUT_RD);
+    ftp_reply(p_sess, FTP_IDLE_TIMEOUT, "Timeout.");
+    shutdown(p_sess->ctrl_fd, SHUT_WR);
+    exit(EXIT_SUCCESS);
+   
+    // close(p_sess->ctrl_fd);
+}
+//数据连接空闲断开闹钟
+void start_cmdio_alarm()
+{
+    if(tunable_idle_session_timeout > 0)
+    {
+        signal(SIGALRM, handle_ctrl_timeout);
+        alarm(tunable_idle_session_timeout); //启动闹钟
+    }
+}
+
+void start_data_alarm();
+
+void handle_data_timeout(int sig)
+{
+    //在每次传输或下载指定字节之后p_sess->data_process会被置为1
+    if(!p_sess->data_process)
+    {
+        ftp_reply(p_sess, FTP_DATA_TIMEOUT, "Data timeout. Reconnect Sorry.");
+        exit(EXIT_FAILURE);
+    }
+    //重新设置闹钟
+    //当上传或下载结束之后p_sess->data_process就不会被置为1
+    //也就是说上传下载结束之后
+    //数据连接的空闲断开闹钟又开始重新计时
+    p_sess->data_process = 0;
+    start_data_alarm();
+}
+void start_data_alarm()
+{
+    if(tunable_data_connection_timeout > 0)
+    {
+        signal(SIGALRM, handle_data_timeout);
+        alarm(tunable_data_connection_timeout);
+   }
+    else if(tunable_idle_session_timeout > 0)
+        alarm(0);
+}
+
 
 //封装回应函数
 void ftp_reply(session_t* sess, int code, const char* text)
@@ -83,6 +133,9 @@ void handler_child(session_t* sess)
         memset(sess->cmd_line, 0, MAX_COMMAND_SIZE);
         memset(sess->cmd, 0, MAX_COMMAND);
         memset(sess->arg, 0, MAX_ARG);
+
+        //开启控制连接空闲断开的闹钟
+        start_cmdio_alarm();
 
         ret = recv(sess->ctrl_fd, sess->cmd_line, MAX_COMMAND_SIZE, 0);
         if (ret == -1)
@@ -396,6 +449,9 @@ int get_transfer_fd(session_t* sess)
         sess->port_addr = NULL;
     }
 
+    //数据连接建立成功, 开启数据连接空闲断开的闹钟
+    if (ret)
+        start_data_alarm();
     return ret;
 }
 
@@ -649,6 +705,9 @@ static void do_stor(session_t* sess)
             return;
         }
 
+        //设置空闲断开状态
+        sess->data_process = 1;
+
         //限速
         if(sess->upload_max_rate != 0)
             limit_rate(sess, ret, 1);
@@ -661,6 +720,8 @@ static void do_stor(session_t* sess)
     close(fd);
     close(sess->data_fd);
     sess->data_fd = -1;
+    //重新启动控制连接断开
+    start_cmdio_alarm();
 }
 
 //下载
@@ -734,6 +795,8 @@ static void do_retr(session_t* sess)
                 break;
             }
             
+            //设置空闲断开状态
+            sess->data_process = 1;
             //限速
             if (sess->download_max_rate != 0)
                 limit_rate(sess, read_count, 0);
@@ -748,6 +811,9 @@ static void do_retr(session_t* sess)
     close(fd);
     close(sess->data_fd);
     sess->data_fd = -1;
+
+    //重新启动控制连接断开
+    start_cmdio_alarm();
 }
 
 //针对上传和下载均适用,保存上次传输的位置

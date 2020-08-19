@@ -31,7 +31,7 @@ parseconf_uint_array[] =
     {"data_connection_timeout", &tunable_data_connection_timeout},
     {"loacl_umask", &tunable_local_umask},
     {"upload_max_rate", &tunable_upload_max_rate},
-    {"download_mas_rate", &tunable_download_max_rate},
+    {"download_max_rate", &tunable_download_max_rate},
     {NULL, NULL}
 };
 

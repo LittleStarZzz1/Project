@@ -8,6 +8,7 @@
 #include <assert.h>
 #include <errno.h>
 #include <signal.h>
+#include <sys/wait.h>
 
 #include <sys/socket.h>
 #include <netinet/in.h>
@@ -44,6 +45,6 @@ do{\
 
 #define MAX_HOST_NAME_SIZE 128
 
-
+#define MAX_BUCKET_SIZE 256
 
 #endif //_COMMON_H

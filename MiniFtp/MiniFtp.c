@@ -7,6 +7,7 @@
 #include "ftp_proto.h"
 #include "hash.h"
 
+//配置项测试函数
 void ParseConf_Test()
 {
     parseconf_load_file("MiniFtp.conf");
@@ -29,6 +30,7 @@ void ParseConf_Test()
 
 //最大连接数限制
 static unsigned int s_children;
+extern session_t* p_sess;
 
 //ip-每ip对应连接数映射关系哈希表
 static hash_t *s_ip_count_hash;
@@ -43,11 +45,15 @@ static hash_t *s_pid_ip_hash;//pid-ip映射关系哈希表
 //将ip对应的连接数减1
 void drop_ip_count(void *ip);
 
+//哈希函数, 根据key值和桶大小, 计算出对应的映射位置
+unsigned int hash_func(unsigned int buckets, void *key);
+
 
 static void check_limit(session_t* sess);
 
 int main(int argc, char* argv)
 {
+    //加载配置文件
     parseconf_load_file("MiniFtp.conf");
     
     //char ip[16] = {0};
@@ -55,7 +61,7 @@ int main(int argc, char* argv)
     //printf("ip = %s\n", ip);
 
     //配置文件解析的测试
-    //ParseConf_Test();
+    ParseConf_Test();
 
     //权限提升, 以root用户打开Miniftp
     if (getuid() != 0)
@@ -70,10 +76,10 @@ int main(int argc, char* argv)
         -1, -1, "", "", "",
         
         //数据连接
-        NULL, -1, -1,
+        NULL, -1, -1, 0,
 
         // ftp协议状态
-        0, NULL, 0, 0, 0
+        0, NULL, 0, 0, 0,
         
         //父子进程通道
         -1, -1,
@@ -82,9 +88,15 @@ int main(int argc, char* argv)
         0, 0, 0, 0
     };
     
+    p_sess = &sess;
+
     sess.upload_max_rate = tunable_upload_max_rate;
     sess.download_max_rate = tunable_download_max_rate;
 
+    //申请ip和count对应的哈希表
+    s_ip_count_hash = hash_alloc(MAX_BUCKET_SIZE, hash_func);
+    //申请pid和ip对应的哈希表
+    s_pid_ip_hash = hash_alloc(MAX_BUCKET_SIZE, hash_func);
 
     //创建监听套接字
     //int listen_fd = tcp_server(tunable_listen_address, tunable_listen_port);
@@ -100,8 +112,15 @@ int main(int argc, char* argv)
         //不断循环获取客户端的连接
         sock_Conn = accept(listen_fd, (struct sockaddr*)&addr_Cli, &addrlen);
 
+        //最大连接数限制
+        //accept获取新建连接之后, ++记录
         ++s_children;
+        //将当前连接个数保存在session会话当中
         sess.num_clients = s_children;
+
+        //每ip连接数限制
+        unsigned int ip = addr_Cli.sin_addr.s_addr;
+        sess.num_per_ip = handle_ip_count(&ip);
 
         if (sock_Conn < 0)
             ERR_EXIT("accept error~~~\n");
@@ -110,7 +129,12 @@ int main(int argc, char* argv)
         pid_t pid = fork();
 
         if (pid == -1)
+        {
+            //创建子进程失败记得做--操作
+            --s_children;
+            sess.num_clients = s_children;
             ERR_EXIT("fork error~~~\n");
+        }
 
         if (pid == 0)//子进程
         {
@@ -128,6 +152,9 @@ int main(int argc, char* argv)
         }
         else//父进程
         {
+            //父进程返回值为子进程pid
+            //因此可以在父进程当中记录每个进程所对应的ip
+            hash_add_entry(s_pid_ip_hash, &pid, sizeof(pid), &ip, sizeof(ip));
             close(sock_Conn);
         }
     }
@@ -139,15 +166,21 @@ int main(int argc, char* argv)
 
 static void check_limit(session_t* sess)
 {
+    //最大客户端连接数有限制并且当前值已经大于最大值
+    //则不能连接
     if (tunable_max_clients != 0 && sess->num_clients > tunable_max_clients)
     {
         // 421 There are too many connected users, please try later
         ftp_reply(sess, FTP_TOO_MANY_USERS, "There are too many connected users, please try later");
         exit(EXIT_FAILURE);
     }
+    //每ip最大连接数有限制并且当前值已经大于最大值
+    //则不能连接
     if (tunable_max_per_ip != 0 && sess->num_per_ip > tunable_max_per_ip)
     {
         // 421 There are too many connections from your internet address
+        ftp_reply(sess, FTP_IP_LIMIT, "There are too many connections from your internet address");
+        exit(EXIT_FAILURE);
     }
 }
 
@@ -157,7 +190,7 @@ void handle_sigchld(int sig)
     while ((waitpid(-1, NULL, WNOHANG)) > 0)
     {
         --s_children;
-        unsigned int *ip = hash_lookup_entry(s_pid_ip_hash, &pid, sizeof(pid));
+        unsigned int *ip = (unsigned int*)hash_lookup_entry(s_pid_ip_hash, &pid, sizeof(pid));
 
         if (ip == NULL)
         {
@@ -174,6 +207,35 @@ unsigned int hash_func(unsigned int buckets, void *key)
     return (*(unsigned int*)key % buckets);
 }
 
+unsigned int handle_ip_count(void *ip)
+{
+    int count = 0;
+    unsigned int *p_count = (unsigned int*)hash_lookup_entry(s_ip_count_hash, ip, sizeof(unsigned int));
+    if(p_count == NULL)
+    {
+        count = 1;
+        hash_add_entry(s_ip_count_hash, ip, sizeof(unsigned int), &count, sizeof(unsigned int));
+    }
+    else
+    {
+        count = *p_count;
+        ++count;
+        *p_count = count;
+    }
+    return count;
+}
+
+void drop_ip_count(void *ip)
+{
+    unsigned int *p_count = (unsigned int*)hash_lookup_entry(s_ip_count_hash, ip, sizeof(unsigned int));
+    if(p_count == NULL)
+        return;
+    int count = *p_count;
+    --count;
+    *p_count = count;
+    if(count == 0)
+        hash_free_entry(s_ip_count_hash, ip, sizeof(unsigned int));
+}
 
 
 

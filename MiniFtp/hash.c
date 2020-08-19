@@ -50,7 +50,7 @@ void hash_add_entry(hash_t *hash, void *key, unsigned int key_size,void *value, 
         fprintf(stderr, "duplicate hash key\n");
         return;
     } 
-    hash_node_t *node = malloc(sizeof(hash_node_t));
+    hash_node_t *node = (hash_node_t*)malloc(sizeof(hash_node_t));
     node->prev = NULL;
     node->next = NULL;
     node->key = malloc(key_size);
